@@ -7,10 +7,12 @@
     "source=claude-code-config-${devcontainerId},target=/home/vscode/.claude,type=volume"
   ],
   "containerEnv": {
-    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
-    "LEGACY_APP_ROOT": "/workspace/legacy-app",
-    "MIGRATION_APP_ROOT": "/workspace/migration-app",
-    "DOCS_ROOT": "/workspace/docs"
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+  },
+  "remoteEnv": {
+    "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}",
+    "GH_TOKEN": "${localEnv:GH_TOKEN}",
+    "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
   },
   "remoteUser": "vscode",
   "features": {
@@ -18,15 +20,20 @@
     "ghcr.io/devcontainers/features/java:1": {
       "version": "21",
       "jdkDistro": "ms"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
     }
   },
+  "postCreateCommand": "cd legacy-app && mvn -q dependency:resolve || true; cd ../migration-app && mvn -q dependency:resolve || true; cd ../frontend-app && npm install || true",
   "customizations": {
     "vscode": {
       "extensions": [
         "anthropic.claude-code",
         "vmware.vscode-spring-boot",
         "vscjava.vscode-java-pack",
-        "redhat.java"
+        "redhat.java",
+        "Vue.volar"
       ],
       "settings": {
         "java.configuration.runtimes": [
