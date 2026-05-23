@@ -1,0 +1,42 @@
+{
+  "name": "Struts→SpringBoot Migration",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "mounts": [
+    "source=claude-code-config-${devcontainerId},target=/home/vscode/.claude,type=volume"
+  ],
+  "containerEnv": {
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+    "LEGACY_APP_ROOT": "/workspace/legacy-app",
+    "MIGRATION_APP_ROOT": "/workspace/migration-app",
+    "DOCS_ROOT": "/workspace/docs"
+  },
+  "remoteUser": "vscode",
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "21",
+      "jdkDistro": "ms"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "vmware.vscode-spring-boot",
+        "vscjava.vscode-java-pack",
+        "redhat.java"
+      ],
+      "settings": {
+        "java.configuration.runtimes": [
+          {
+            "name": "JavaSE-21",
+            "path": "/usr/lib/jvm/msopenjdk-current",
+            "default": true
+          }
+        ]
+      }
+    }
+  }
+}
