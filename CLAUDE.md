@@ -65,10 +65,32 @@ gh pr create \
 
 ---
 
-## 自走実行ガイド（devcontainer + `--dangerously-skip-permissions`）
+## 自走実行ガイド（devcontainer + ループ＋サブエージェント方式）
 
-Dev Container は隔離された安全な実行環境であるため、`--dangerously-skip-permissions` を付けて Claude にフェーズ単位で自走させる。
-ファイル操作・ビルド・git 操作・GitHub API 呼び出しをすべて無停止で完了する。
+Dev Container は隔離された安全な実行環境であるため、`--dangerously-skip-permissions` を付けて Claude を自走させる。
+**オーケストレーターClaude** がループで未対応 Issue を自律的に検出・処理し、タスク種別に応じて適切なモデルのサブエージェントに委譲する。
+
+### アーキテクチャ概要
+
+```
+[人] devcontainer 起動（1回だけ）
+     ↓
+[オーケストレーターClaude] ループモードで動作
+  ├─ gh issue list で未対応 Issue を検出
+  ├─ Issue の内容・フェーズを判断
+  ├─ 設計・判断が重いタスク  → Opus サブエージェントを生成
+  ├─ コード実装・ドキュメント生成 → Sonnet サブエージェントを生成
+  ├─ ビルド確認・検索・単純作業 → Haiku サブエージェントを生成
+  └─ PR 作成 → 次の未対応 Issue へ
+```
+
+### サブエージェントのモデル選択基準
+
+| モデル | 用途 | 代表タスク |
+|---|---|---|
+| Opus | 設計・判断・複雑な推論 | Phase 2（解析レポート）、Phase 3（移行設計書）、実装方針の立案 |
+| Sonnet | コード実装・ドキュメント生成 | Phase 1（Struts実装）、Phase 4（Spring Boot API）、Phase 5（Vue.js） |
+| Haiku | 単純な確認・検索・補助作業 | ファイル検索、ビルド結果確認、Issue ラベル確認 |
 
 ### 前提確認（devcontainer 内で実行）
 
@@ -77,16 +99,15 @@ gh auth status         # GitHub CLI の認証確認
 git config user.name   # git ユーザー設定確認
 ```
 
-### Claude の自走範囲
+### オーケストレーターの自走範囲
 
 `--dangerously-skip-permissions` 使用時、Claude は以下を人間の確認なしに実行する：
 
-1. 対象 Phase の既存 Issue を確認（`gh issue list --label "phase-X"`）
-2. ブランチ作成（`git checkout -b issue/<最小番号>/<フェーズ説明>`）
-3. コード実装・ドキュメント生成
-4. ビルド・テスト確認（`mvn compile` / `npm run build` など）
-5. コミット・push・PR 作成（複数 Issue を 1 PR でまとめて `Closes #N` を列挙）
-6. 完了報告の出力
+1. `gh issue list` で未クローズの Issue を検出し、フェーズ・優先度を判断
+2. Issue の種別に応じてサブエージェント（Opus / Sonnet / Haiku）を生成
+3. サブエージェントがブランチ作成・実装・ビルド確認・コミット・PR 作成を実行
+4. PR 作成後、次の未対応 Issue を検索してループ継続
+5. 未対応 Issue がなくなったら終了報告を出力
 
 ### バッチ実行時の IDD ルール
 
@@ -97,62 +118,42 @@ git config user.name   # git ユーザー設定確認
 
 > インタラクティブモード（通常の対話セッション）では Issue ごとに個別の PR を作成することを推奨する。
 
-### フェーズ別起動コマンド
+### 起動手順
 
-#### Phase 1: Struts アプリ実装（Issue #5〜#10）
+#### ステップ 1: devcontainer 起動（人が1回だけ実行）
+
+```bash
+# プロジェクトルートで実行
+devcontainer up --workspace-folder .
+devcontainer exec --workspace-folder . bash
+```
+
+#### ステップ 2: 前提確認（devcontainer 内）
+
+```bash
+gh auth status
+git config user.name
+```
+
+#### ステップ 3: オーケストレーター起動（devcontainer 内）
 
 ```bash
 claude --dangerously-skip-permissions \
-  -p "CLAUDE.md の Phase 1 を実行してください。GitHub Issue #5〜#10 を参照し、IDD ワークフローに従い ブランチ作成・実装・PR 作成まで自走で完了してください。完了したら完了報告を出力してください。"
-```
-
-PR マージ前に確認（devcontainer 内）:
-
-```bash
-cd legacy-app && mvn -q compile
-# 起動確認（任意）: mvn tomcat7:run
-```
-
-#### Phase 2: 解析レポート生成（Issue #11）
-
-```bash
-claude --dangerously-skip-permissions \
-  -p "CLAUDE.md の Phase 2 を実行してください。GitHub Issue #11 を参照し、IDD ワークフローに従い ブランチ作成・ドキュメント生成・PR 作成まで自走で完了してください。完了したら完了報告を出力してください。"
+  -p "CLAUDE.md の自走実行ガイドに従い、GitHub の未対応 Issue を順番に処理してください。
+各 Issue の内容・フェーズを判断し、適切なモデル（Opus/Sonnet/Haiku）のサブエージェントを生成して実装・PR 作成まで完了してください。
+未対応 Issue がなくなるまでループを継続し、すべて完了したら完了報告を出力してください。"
 ```
 
 > **Phase 2 PR マージ後推奨**: `docs/01_analysis/issues.md` の懸念点を確認し、移行方針の補足を本ファイル（CLAUDE.md）の該当 Phase セクションに追記する。Phase 3 以降の実装精度が向上する。
 
-#### Phase 3: 移行設計書生成（Issue #12）
+### フェーズ単体で実行したい場合（デバッグ・再実行用）
+
+特定フェーズのみ再実行したいときは、オーケストレーターに対象を絞って指示する：
 
 ```bash
 claude --dangerously-skip-permissions \
-  -p "CLAUDE.md の Phase 3 を実行してください。GitHub Issue #12 を参照し、IDD ワークフローに従い ブランチ作成・設計書生成・PR 作成まで自走で完了してください。完了したら完了報告を出力してください。"
-```
-
-#### Phase 4: Spring Boot REST API 実装（Issue #13〜#15）
-
-```bash
-claude --dangerously-skip-permissions \
-  -p "CLAUDE.md の Phase 4 を実行してください。GitHub Issue #13〜#15 を参照し、IDD ワークフローに従い ブランチ作成・実装・PR 作成まで自走で完了してください。完了したら完了報告を出力してください。"
-```
-
-PR マージ前に確認（devcontainer 内）:
-
-```bash
-cd migration-app && mvn -q compile && mvn -q test
-```
-
-#### Phase 5: Vue.js フロントエンド実装（Issue #16〜#18）
-
-```bash
-claude --dangerously-skip-permissions \
-  -p "CLAUDE.md の Phase 5 を実行してください。GitHub Issue #16〜#18 を参照し、IDD ワークフローに従い ブランチ作成・実装・PR 作成まで自走で完了してください。完了したら完了報告を出力してください。"
-```
-
-PR マージ前に確認（devcontainer 内）:
-
-```bash
-cd frontend-app && npm run build && npm test
+  -p "CLAUDE.md の Phase X のみを対象に自走実行してください。
+該当 Issue を確認し、Opus/Sonnet/Haiku のサブエージェントを適切に使い分けて PR 作成まで完了してください。"
 ```
 
 ---
