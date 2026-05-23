@@ -63,6 +63,100 @@ gh pr create \
 - reviewdog の自動レビューコメントを確認し、重大な指摘は修正すること
 - 人間のレビュー承認後にマージ → Issue が自動クローズされることを確認
 
+---
+
+## 自走実行ガイド（devcontainer + `--dangerously-skip-permissions`）
+
+Dev Container は隔離された安全な実行環境であるため、`--dangerously-skip-permissions` を付けて Claude にフェーズ単位で自走させる。
+ファイル操作・ビルド・git 操作・GitHub API 呼び出しをすべて無停止で完了する。
+
+### 前提確認（devcontainer 内で実行）
+
+```bash
+gh auth status         # GitHub CLI の認証確認
+git config user.name   # git ユーザー設定確認
+```
+
+### Claude の自走範囲
+
+`--dangerously-skip-permissions` 使用時、Claude は以下を人間の確認なしに実行する：
+
+1. 対象 Phase の既存 Issue を確認（`gh issue list --label "phase-X"`）
+2. ブランチ作成（`git checkout -b issue/<最小番号>/<フェーズ説明>`）
+3. コード実装・ドキュメント生成
+4. ビルド・テスト確認（`mvn compile` / `npm run build` など）
+5. コミット・push・PR 作成（複数 Issue を 1 PR でまとめて `Closes #N` を列挙）
+6. 完了報告の出力
+
+### バッチ実行時の IDD ルール
+
+1 フェーズに複数 Issue がある場合、次のように処理する：
+- そのフェーズで最も小さい Issue 番号を使ってブランチを作成（例: `issue/5/phase1-struts`）
+- PR 本文にすべての関連 Issue を列挙（例: `Closes #5, Closes #6, Closes #7, Closes #8, Closes #9, Closes #10`）
+- 複数 Issue を 1 PR でまとめてクローズする
+
+> インタラクティブモード（通常の対話セッション）では Issue ごとに個別の PR を作成することを推奨する。
+
+### フェーズ別起動コマンド
+
+#### Phase 1: Struts アプリ実装（Issue #5〜#10）
+
+```bash
+claude --dangerously-skip-permissions \
+  -p "CLAUDE.md の Phase 1 を実行してください。GitHub Issue #5〜#10 を参照し、IDD ワークフローに従い ブランチ作成・実装・PR 作成まで自走で完了してください。完了したら完了報告を出力してください。"
+```
+
+PR マージ前に確認（devcontainer 内）:
+
+```bash
+cd legacy-app && mvn -q compile
+# 起動確認（任意）: mvn tomcat7:run
+```
+
+#### Phase 2: 解析レポート生成（Issue #11）
+
+```bash
+claude --dangerously-skip-permissions \
+  -p "CLAUDE.md の Phase 2 を実行してください。GitHub Issue #11 を参照し、IDD ワークフローに従い ブランチ作成・ドキュメント生成・PR 作成まで自走で完了してください。完了したら完了報告を出力してください。"
+```
+
+> **Phase 2 PR マージ後推奨**: `docs/01_analysis/issues.md` の懸念点を確認し、移行方針の補足を本ファイル（CLAUDE.md）の該当 Phase セクションに追記する。Phase 3 以降の実装精度が向上する。
+
+#### Phase 3: 移行設計書生成（Issue #12）
+
+```bash
+claude --dangerously-skip-permissions \
+  -p "CLAUDE.md の Phase 3 を実行してください。GitHub Issue #12 を参照し、IDD ワークフローに従い ブランチ作成・設計書生成・PR 作成まで自走で完了してください。完了したら完了報告を出力してください。"
+```
+
+#### Phase 4: Spring Boot REST API 実装（Issue #13〜#15）
+
+```bash
+claude --dangerously-skip-permissions \
+  -p "CLAUDE.md の Phase 4 を実行してください。GitHub Issue #13〜#15 を参照し、IDD ワークフローに従い ブランチ作成・実装・PR 作成まで自走で完了してください。完了したら完了報告を出力してください。"
+```
+
+PR マージ前に確認（devcontainer 内）:
+
+```bash
+cd migration-app && mvn -q compile && mvn -q test
+```
+
+#### Phase 5: Vue.js フロントエンド実装（Issue #16〜#18）
+
+```bash
+claude --dangerously-skip-permissions \
+  -p "CLAUDE.md の Phase 5 を実行してください。GitHub Issue #16〜#18 を参照し、IDD ワークフローに従い ブランチ作成・実装・PR 作成まで自走で完了してください。完了したら完了報告を出力してください。"
+```
+
+PR マージ前に確認（devcontainer 内）:
+
+```bash
+cd frontend-app && npm run build && npm test
+```
+
+---
+
 ## 技術スタック
 
 ### 移行元（legacy-app）
