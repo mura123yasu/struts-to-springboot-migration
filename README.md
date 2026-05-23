@@ -1,5 +1,11 @@
 # Struts → Spring Boot マイグレーション デモ
 
+## CI Status
+
+[![Legacy App CI](https://github.com/mura123yasu/struts-to-springboot-migration/actions/workflows/ci-legacy.yml/badge.svg)](https://github.com/mura123yasu/struts-to-springboot-migration/actions/workflows/ci-legacy.yml)
+[![Backend API CI](https://github.com/mura123yasu/struts-to-springboot-migration/actions/workflows/ci-backend.yml/badge.svg)](https://github.com/mura123yasu/struts-to-springboot-migration/actions/workflows/ci-backend.yml)
+[![Frontend CI](https://github.com/mura123yasu/struts-to-springboot-migration/actions/workflows/ci-frontend.yml/badge.svg)](https://github.com/mura123yasu/struts-to-springboot-migration/actions/workflows/ci-frontend.yml)
+
 ## 構成
 - `legacy-app/` : 移行元 Struts2 アプリ（図書館蔵書管理システム）
 - `migration-app/` : 移行先 Spring Boot 3.x REST API
