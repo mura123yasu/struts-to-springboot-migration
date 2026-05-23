@@ -42,13 +42,26 @@ docker ps --filter "label=devcontainer.local_folder=$(pwd)" -q | xargs docker st
 ### Claude Code による自走実行
 
 コンテナ内で Claude Code を使い、フェーズ単位で自走実行できます。
-ホスト側に `ANTHROPIC_API_KEY` 環境変数を設定してからコンテナを起動してください。
+
+#### 認証（初回のみ）
+
+コンテナ起動後、`claude login` を実行します。
+ブラウザが使えない環境でも URL がターミナルに表示されるので、ホストのブラウザで開いて OAuth を完了してください。
 
 ```bash
-# 環境変数を設定してから起動
-export ANTHROPIC_API_KEY=sk-ant-...
 devcontainer up --workspace-folder .
+devcontainer exec --workspace-folder . claude login
+# → URL が表示される
+# → ホストのブラウザで開いて認証
+# → "Logged in as ..." が表示されれば完了
+```
 
+認証情報は Docker ボリュームに保存されるため、コンテナを再起動しても再ログイン不要です。
+（`--remove-existing-container` でコンテナを作り直した場合は再ログインが必要）
+
+#### 自走実行
+
+```bash
 # Claude 自走実行（例: Phase 1）
 devcontainer exec --workspace-folder . \
   claude --dangerously-skip-permissions \
