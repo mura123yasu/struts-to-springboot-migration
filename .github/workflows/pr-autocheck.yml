@@ -1,0 +1,102 @@
+name: PR Auto Check
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  # ─── 1. Linked Issue 確認 ─────────────────────────────────────────
+  # IDD ルール: PR 本文に "Closes #N" / "Fixes #N" / "Resolves #N" が必須
+  check-linked-issue:
+    name: Linked Issue Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify PR body contains a linked issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || '';
+            const pattern = /(closes|fixes|resolves)\s+#\d+/i;
+            if (!pattern.test(body)) {
+              core.setFailed(
+                'PR の本文に関連 Issue が記載されていません。\n' +
+                '"Closes #<Issue番号>" の形式で必ず記載してください。\n' +
+                'イシュー駆動開発ルール (CLAUDE.md) を確認してください。'
+              );
+            } else {
+              core.info('✅ Linked issue check passed.');
+            }
+
+  # ─── 2. ESLint inline review (reviewdog) ─────────────────────────
+  # frontend-app/package.json が存在する Phase 5 以降に有効になる
+  reviewdog-eslint:
+    name: ESLint Review (reviewdog)
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('frontend-app/package.json') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend-app
+        run: npm ci
+
+      - name: ESLint with reviewdog (inline PR comments)
+        uses: reviewdog/action-eslint@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          reporter: github-pr-review   # PR の diff 行に直接コメント投稿
+          workdir: frontend-app
+          eslint_flags: '--ext .ts,.vue src/'
+          fail_on_error: false          # lint 指摘はコメントのみ（CI 失敗にしない）
+
+  # ─── 3. Checkstyle inline review (reviewdog) ─────────────────────
+  # migration-app/pom.xml が存在する Phase 4 以降に有効になる
+  # pom.xml に maven-checkstyle-plugin の設定が必要（Phase 4a で追加）
+  reviewdog-checkstyle:
+    name: Checkstyle Review (reviewdog)
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('migration-app/pom.xml') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'microsoft'
+
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-backend-${{ hashFiles('migration-app/pom.xml') }}
+
+      - name: Setup reviewdog
+        uses: reviewdog/action-setup@v1
+        with:
+          reviewdog_version: latest
+
+      - name: Run Checkstyle & post inline comments
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: migration-app
+        run: |
+          mvn checkstyle:checkstyle --batch-mode -DfailsOnError=false || true
+          reviewdog -f=checkstyle \
+            -name="Checkstyle" \
+            -reporter=github-pr-review \
+            -filter-mode=added \
+            -fail-on-error=false \
+            < target/checkstyle-result.xml

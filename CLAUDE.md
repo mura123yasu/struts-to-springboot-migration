@@ -1,11 +1,67 @@
-# Claude 作業指示書：Struts → Spring Boot マイグレーション
+# Claude 作業指示書：Struts → Spring Boot + Vue.js マイグレーション
 
 ## 基本ルール（厳守）
 - `legacy-app/` は Phase 1 で実装した後は参照専用。Phase 2 以降は変更・削除しない
-- `migration-app/` が移行先の作業場所
+- `migration-app/` がバックエンド（Spring Boot REST API）の作業場所
+- `frontend-app/` がフロントエンド（Vue.js SPA）の作業場所
 - 各フェーズ完了時に必ず「完了報告」を出力する
 - 判断に迷ったら実装を止めて `docs/questions.md` に質問と現時点の最善案を書き、作業を継続する
 - 既存の設定ファイル（.devcontainer/ 等）は変更しない
+
+## イシュー駆動開発ワークフロー（厳守）
+
+すべての作業は GitHub Issue を起点とする。以下の順序で必ず進めること。
+
+### ステップ 1: Issue 作成
+作業開始前に Issue を作成し、ラベルとマイルストーンを設定する。
+
+```bash
+gh issue create \
+  --title "[Phase X] 作業タイトル" \
+  --label "phase-X,task" \
+  --milestone "Phase X: ..." \
+  --body "$(cat <<'BODY'
+## 概要
+<!-- 何を実装するか -->
+
+## 受け入れ条件
+- [ ] 条件1
+- [ ] 条件2
+
+## 対応する CLAUDE.md セクション
+## Phase X: ...
+BODY
+)"
+```
+
+### ステップ 2: ブランチ作成
+Issue 番号を含むブランチ名で作業する。
+
+```bash
+git checkout -b issue/<番号>/<短い説明>
+# 例: issue/7/struts-project-setup
+```
+
+### ステップ 3: 実装・コミット
+コミットは論理的にまとまった単位で行う。
+
+### ステップ 4: PR 作成（`Closes #N` 必須）
+PR 本文に `Closes #<番号>` を含めないと `pr-autocheck` CI が失敗する。
+
+```bash
+gh pr create \
+  --title "作業タイトル" \
+  --body "Closes #<番号>
+
+## 変更内容
+- ..."
+```
+
+### ステップ 5: CI 通過 → マージ
+- `Linked Issue Check` が通ること
+- 変更対象モジュールの CI（ci-legacy / ci-backend / ci-frontend）が通ること
+- reviewdog の自動レビューコメントを確認し、重大な指摘は修正すること
+- 人間のレビュー承認後にマージ → Issue が自動クローズされることを確認
 
 ## 技術スタック
 
@@ -17,15 +73,24 @@
 - MyBatis（DAOパターン）
 - Maven / Tomcat（mvn tomcat7:run で起動）
 
-### 移行先（migration-app）
+### 移行先バックエンド（migration-app）
 - Java 21
 - Spring Boot 3.3.x
-- Spring MVC + Thymeleaf（Layout Dialect 使用）
+- Spring Web（REST API / `@RestController`）
 - Spring Data JPA + H2 Database
-- Spring Security（ログイン認証）
+- Spring Security + JWT（ステートレス認証）
 - Bean Validation
 - Lombok
 - Maven
+
+### 移行先フロントエンド（frontend-app）
+- Node.js 20.x
+- Vue.js 3（Composition API / `<script setup>`）
+- Vite（ビルドツール）
+- Vue Router 4（クライアントサイドルーティング）
+- Pinia（状態管理）
+- Axios（HTTP クライアント / JWT インターセプター）
+- Vitest + Vue Test Utils（ユニットテスト）
 
 ## ドメインモデル
 
@@ -46,8 +111,15 @@
 | フィールド | 型 | 備考 |
 |---|---|---|
 | username | String | ログインID |
-| password | String | パスワード |
+| password | String | BCrypt ハッシュ済み |
 | displayName | String | 表示名 |
+
+### API 認証方式
+- JWT（JSON Web Token）を使用
+- ログイン成功時に `{ token: "..." }` を返す
+- フロントエンドは `Authorization: Bearer <token>` ヘッダーで送信
+- Spring Security Filter でリクエストごとに検証（ステートレス）
+- トークン有効期限：24時間
 
 ---
 
@@ -103,21 +175,23 @@
 ## Phase 3: 移行設計書生成（docs/02_design/）
 | ファイル | 内容 |
 |---|---|
-| action_to_controller.md | Action → Controller マッピング表 |
-| form_to_dto.md | ActionForm → DTO 変換方針 |
-| jsp_to_thymeleaf.md | JSP → Thymeleaf 変換方針 |
+| action_to_controller.md | Action → RestController マッピング表 |
+| form_to_dto.md | ActionForm → Request/Response DTO 変換方針 |
+| api_design.md | REST API エンドポイント設計（URL・HTTP メソッド・リクエスト/レスポンス形式） |
+| vue_component_design.md | Vue コンポーネント構成・画面遷移・Pinia ストア設計 |
 | db_migration.md | MyBatis SQL → JPA 変換方針 |
-| security_design.md | セッション管理 → Spring Security 設計 |
-| package_structure.md | migration-app パッケージ構成図 |
+| security_design.md | セッション管理 → JWT + Spring Security 設計 |
+| package_structure.md | migration-app / frontend-app ディレクトリ構成図 |
 
 ---
 
-## Phase 4: Spring Boot アプリの実装（migration-app/）
+## Phase 4: Spring Boot REST API の実装（migration-app/）
 
-### Controller
+### RestController
 - Struts Action と 1:1 対応（対応元をコメントで記載）
-- `@GetMapping` / `@PostMapping` を明示的に分ける
-- バリデーションは `@Valid` + `BindingResult`
+- `@GetMapping` / `@PostMapping` / `@PutMapping` / `@DeleteMapping` を明示的に分ける
+- バリデーションは `@Valid` + `@RequestBody`
+- レスポンスは `ResponseEntity<T>` で統一
 
 ### Repository
 - 単純 CRUD は `JpaRepository` を継承
@@ -125,20 +199,61 @@
 - 複雑な SQL は `@Query(nativeQuery=true)` で移植
 
 ### セキュリティ
-- `SecurityConfig` に CSRF・ログイン・ログアウトを集約
+- `SecurityConfig` に JWT フィルター・CORS・CSRF 無効化を集約
+- `JwtFilter` でリクエストごとにトークン検証
 - パスワードは `BCryptPasswordEncoder`（初期データは変換して登録）
-- ログイン後リダイレクト先は `/book/list`
+- 認証不要エンドポイント：`POST /api/auth/login`
 
-### Thymeleaf
-- `common/layout.html` を Layout Dialect で共通化
-- `<s:form>` → `th:action` + `th:object` + `th:field`
-- `<s:fielderror>` → `th:errors`
+### CORS 設定
+- 開発環境：`http://localhost:5173`（Vite デフォルト）を許可
+- 全 API エンドポイントに適用
 
 ### 完了条件
 - `cd migration-app && mvn compile` が通る
 - `mvn test` が通る（最低限 Controller 層の単体テスト）
 - `mvn spring-boot:run` で起動できる
+- `curl` で全 API エンドポイントの動作確認ができる
+
+---
+
+## Phase 5: Vue.js フロントエンドの実装（frontend-app/）
+
+### プロジェクト構成
+```
+frontend-app/
+  src/
+    api/          # Axios インスタンス・API 呼び出し関数
+    assets/       # 静的ファイル
+    components/
+      auth/       # ログイン関連コンポーネント
+      book/       # 書籍関連コンポーネント
+      common/     # AppLayout, AppHeader, LoadingSpinner 等
+    router/       # Vue Router 設定・認証ガード
+    stores/       # Pinia ストア（authStore, bookStore）
+    types/        # TypeScript 型定義
+    views/        # 各画面（ページ）コンポーネント
+```
+
+### 画面一覧
+| View | パス | 概要 |
+|---|---|---|
+| LoginView | /login | ログイン画面 |
+| BookListView | /books | 書籍一覧・検索 |
+| BookDetailView | /books/:id | 書籍詳細 |
+| BookFormView | /books/new, /books/:id/edit | 登録・編集フォーム（共通） |
+
+### 認証フロー
+- 未ログイン状態で `/books` 系にアクセス → `/login` にリダイレクト
+- ログイン成功 → JWT を `authStore` に保存 → `/books` にリダイレクト
+- Axios インターセプターで全リクエストに `Authorization` ヘッダーを付与
+- トークン期限切れ（401）→ 自動ログアウト
+
+### 完了条件
+- `cd frontend-app && npm run build` が通る
+- `npm run test` が通る（最低限 View 層のユニットテスト）
+- `npm run dev` で起動し、Spring Boot API と連携して全機能が動作する
 - ログイン → 一覧 → 登録 → 編集 → 削除 が動作する
+- バリデーションエラー時にメッセージが表示される
 
 ---
 
