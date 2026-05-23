@@ -1,30 +1,22 @@
 {
   "name": "Struts→SpringBoot Migration",
-  "build": {
-    "dockerfile": "Dockerfile"
-  },
-  "mounts": [
-    "source=claude-code-config-${devcontainerId},target=/home/vscode/.claude,type=volume"
-  ],
-  "containerEnv": {
-    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+  "image": "mcr.microsoft.com/devcontainers/base:bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "21",
+      "jdkDistro": "ms",
+      "installMaven": "true"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
   },
   "remoteEnv": {
     "GH_TOKEN": "${localEnv:GH_TOKEN}",
     "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
   },
-  "remoteUser": "vscode",
-  "features": {
-    "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
-    "ghcr.io/devcontainers/features/java:1": {
-      "version": "21",
-      "jdkDistro": "ms"
-    },
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "20"
-    }
-  },
-  "postCreateCommand": "cd legacy-app && mvn -q dependency:resolve || true; cd ../migration-app && mvn -q dependency:resolve || true; cd ../frontend-app && npm install || true",
+  "postCreateCommand": ".devcontainer/post_create.sh",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -33,16 +25,7 @@
         "vscjava.vscode-java-pack",
         "redhat.java",
         "Vue.volar"
-      ],
-      "settings": {
-        "java.configuration.runtimes": [
-          {
-            "name": "JavaSE-21",
-            "path": "/usr/lib/jvm/msopenjdk-current",
-            "default": true
-          }
-        ]
-      }
+      ]
     }
   }
 }
