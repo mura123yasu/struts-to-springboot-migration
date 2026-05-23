@@ -8,6 +8,61 @@
 - 判断に迷ったら実装を止めて `docs/questions.md` に質問と現時点の最善案を書き、作業を継続する
 - 既存の設定ファイル（.devcontainer/ 等）は変更しない
 
+## イシュー駆動開発ワークフロー（厳守）
+
+すべての作業は GitHub Issue を起点とする。以下の順序で必ず進めること。
+
+### ステップ 1: Issue 作成
+作業開始前に Issue を作成し、ラベルとマイルストーンを設定する。
+
+```bash
+gh issue create \
+  --title "[Phase X] 作業タイトル" \
+  --label "phase-X,task" \
+  --milestone "Phase X: ..." \
+  --body "$(cat <<'BODY'
+## 概要
+<!-- 何を実装するか -->
+
+## 受け入れ条件
+- [ ] 条件1
+- [ ] 条件2
+
+## 対応する CLAUDE.md セクション
+## Phase X: ...
+BODY
+)"
+```
+
+### ステップ 2: ブランチ作成
+Issue 番号を含むブランチ名で作業する。
+
+```bash
+git checkout -b issue/<番号>/<短い説明>
+# 例: issue/7/struts-project-setup
+```
+
+### ステップ 3: 実装・コミット
+コミットは論理的にまとまった単位で行う。
+
+### ステップ 4: PR 作成（`Closes #N` 必須）
+PR 本文に `Closes #<番号>` を含めないと `pr-autocheck` CI が失敗する。
+
+```bash
+gh pr create \
+  --title "作業タイトル" \
+  --body "Closes #<番号>
+
+## 変更内容
+- ..."
+```
+
+### ステップ 5: CI 通過 → マージ
+- `Linked Issue Check` が通ること
+- 変更対象モジュールの CI（ci-legacy / ci-backend / ci-frontend）が通ること
+- reviewdog の自動レビューコメントを確認し、重大な指摘は修正すること
+- 人間のレビュー承認後にマージ → Issue が自動クローズされることを確認
+
 ## 技術スタック
 
 ### 移行元（legacy-app）

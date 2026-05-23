@@ -1,0 +1,57 @@
+name: Backend API CI
+
+on:
+  pull_request:
+    paths:
+      - 'migration-app/**'
+      - '.github/workflows/ci-backend.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'migration-app/**'
+
+jobs:
+  build-and-test:
+    name: Build, Test & Coverage (Java 21)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'microsoft'
+
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-backend-${{ hashFiles('migration-app/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2-backend-
+
+      - name: Build
+        working-directory: migration-app
+        run: mvn compile --batch-mode
+
+      - name: Test with JaCoCo coverage
+        # pom.xml に jacoco-maven-plugin の設定が必要 (Phase 4a で追加)
+        working-directory: migration-app
+        run: mvn test jacoco:report --batch-mode
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: migration-app/target/site/jacoco/
+
+      - name: Post coverage comment to PR
+        if: github.event_name == 'pull_request'
+        uses: madrapps/jacoco-report@v1.6.1
+        with:
+          paths: migration-app/target/site/jacoco/jacoco.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          min-coverage-overall: 60
+          min-coverage-changed-files: 60
+          title: '## Backend Coverage Report'

@@ -1,0 +1,74 @@
+name: Security Scan
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'  # 毎週月曜 09:00 JST (UTC 00:00)
+  pull_request:
+    paths:
+      - '**/pom.xml'
+      - '**/package.json'
+      - '**/package-lock.json'
+  workflow_dispatch:
+
+jobs:
+  owasp-legacy:
+    name: OWASP Dependency Check (legacy-app)
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('legacy-app/pom.xml') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'microsoft'
+      - name: OWASP Dependency Check
+        working-directory: legacy-app
+        run: |
+          mvn org.owasp:dependency-check-maven:check \
+            -DfailBuildOnCVSS=9 \
+            --batch-mode || true
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owasp-legacy
+          path: legacy-app/target/dependency-check-report.html
+
+  owasp-backend:
+    name: OWASP Dependency Check (migration-app)
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('migration-app/pom.xml') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'microsoft'
+      - name: OWASP Dependency Check
+        working-directory: migration-app
+        run: |
+          mvn org.owasp:dependency-check-maven:check \
+            -DfailBuildOnCVSS=9 \
+            --batch-mode || true
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owasp-backend
+          path: migration-app/target/dependency-check-report.html
+
+  npm-audit:
+    name: npm audit (frontend-app)
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('frontend-app/package.json') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        working-directory: frontend-app
+        run: npm ci
+      - name: npm audit
+        working-directory: frontend-app
+        run: npm audit --audit-level=high || true

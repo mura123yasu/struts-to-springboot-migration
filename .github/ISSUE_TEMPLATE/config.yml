@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 作業指示書 (CLAUDE.md)
+    url: https://github.com/mura123yasu/struts-to-springboot-migration/blob/main/CLAUDE.md
+    about: フェーズ別の実装仕様・完了条件を確認する

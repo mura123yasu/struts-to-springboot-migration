@@ -1,192 +1,130 @@
-# CI/CD 設計・計画書
+# CI/CD 設計書
 
-## 方針
+イシュー駆動開発（IDD）を支えるための CI/CD 構成。
+**実装は CI/CD 基盤整備フェーズで最初に行い、Phase 1〜5 の実装フェーズより先に整備する。**
 
-| 項目 | 選択 | 理由 |
+---
+
+## ワークフロー全体像
+
+```
+開発者（Claude）
+  │
+  ├─ Issue 作成（gh issue create）
+  │
+  ├─ ブランチ: issue/<番号>/<説明>
+  │
+  ├─ コミット & Push
+  │
+  └─ PR 作成（Closes #N）
+         │
+         ▼
+    pr-autocheck.yml ─── Linked Issue Check（Closes #N がなければ即失敗）
+         │               reviewdog ESLint    （inline PR コメント）
+         │               reviewdog Checkstyle（inline PR コメント）
+         │
+    ci-legacy.yml   ─── legacy-app/** 変更時に Build & Test
+    ci-backend.yml  ─── migration-app/** 変更時に Build + Test + JaCoCo
+    ci-frontend.yml ─── frontend-app/** 変更時に Lint + 型チェック + Vitest + Build
+         │
+         ▼
+    人間レビュー（自動レビュー結果を踏まえて確認）
+         │
+         ▼
+    main マージ → Issue 自動クローズ
+```
+
+---
+
+## ワークフロー詳細
+
+### `pr-autocheck.yml` — PR 自動チェック（全 PR に必ず実行）
+
+| ジョブ | 内容 | 失敗条件 |
 |---|---|---|
-| CI プラットフォーム | GitHub Actions | リポジトリと同一サービスで設定シンプル |
-| トリガー | PR 作成/更新・main push | PR で品質ゲート、main push で最終確認 |
-| ビルド分割 | モノレポ対応（paths filter） | 変更があったモジュールだけビルドしてコストを抑える |
-| Java | JDK 21（ubuntu-latest） | 移行先と揃える。legacy-app も JDK 21 でビルド |
-| Node.js | Node 20.x LTS | frontend-app の Vite / Vitest に対応 |
+| `check-linked-issue` | PR 本文に `Closes #N` / `Fixes #N` / `Resolves #N` があるか | なければ即失敗（IDD 強制） |
+| `reviewdog-eslint` | ESLint 結果を PR diff にインラインコメント投稿 | `frontend-app/package.json` 存在時のみ実行 |
+| `reviewdog-checkstyle` | Checkstyle 結果を PR diff にインラインコメント投稿 | `migration-app/pom.xml` 存在時のみ実行 |
+
+**ポイント**: `check-linked-issue` はブランチ保護の必須チェックに設定する。
+reviewdog の lint 指摘は `fail_on_error: false`（コメントのみ）で、人間が内容を確認して判断する。
 
 ---
 
-## ワークフロー構成
+### `ci-legacy.yml` — Struts レガシーアプリ
 
-### 1. `legacy-app-ci.yml` — Struts レガシーアプリのビルド・テスト
-
-```
-トリガー: PR / push to main
-変更パス: legacy-app/**
-
-ジョブ:
-  build-and-test:
-    - actions/checkout
-    - actions/setup-java (JDK 21)
-    - actions/cache (Maven ~/.m2)
-    - mvn compile --batch-mode --fail-at-end
-    - mvn test  ※ Phase 1b 完了後に有効化
-```
-
-**目的**: legacy-app を触るときに意図せずビルドが壊れていないか検出する。
+- **トリガー**: `legacy-app/**` の変更を含む PR / main push
+- **ジョブ**: JDK 21 + Maven キャッシュ → `mvn compile` → `mvn test`
+- **有効化タイミング**: Phase 1 で `legacy-app/pom.xml` が追加されてから
 
 ---
 
-### 2. `migration-api-ci.yml` — Spring Boot REST API のビルド・テスト・カバレッジ
+### `ci-backend.yml` — Spring Boot REST API
 
-```
-トリガー: PR / push to main
-変更パス: migration-app/**
-
-ジョブ:
-  build-and-test:
-    - actions/checkout
-    - actions/setup-java (JDK 21)
-    - actions/cache (Maven ~/.m2)
-    - mvn compile --batch-mode
-    - mvn test --batch-mode
-    - JaCoCo カバレッジレポート生成
-    - PR へのカバレッジサマリーコメント投稿（※ PR イベント時のみ）
-```
-
-**目的**: API の品質ゲート。Controller / Service のユニットテストが必ず通ることを保証する。
+- **トリガー**: `migration-app/**` の変更を含む PR / main push
+- **ジョブ**: JDK 21 + Maven キャッシュ → `mvn compile` → `mvn test jacoco:report`
+- **追加機能**: JaCoCo カバレッジレポートを PR にコメント投稿（60% 未満で警告）
+- **有効化タイミング**: Phase 4 で `migration-app/pom.xml` が追加されてから
+- **前提**: `pom.xml` に `jacoco-maven-plugin` と `maven-checkstyle-plugin` の設定が必要（Phase 4a で追加）
 
 ---
 
-### 3. `frontend-ci.yml` — Vue.js フロントエンドの Lint・型チェック・テスト・ビルド
+### `ci-frontend.yml` — Vue.js フロントエンド
 
-```
-トリガー: PR / push to main
-変更パス: frontend-app/**
-
-ジョブ:
-  lint-typecheck-test-build:
-    - actions/checkout
-    - actions/setup-node (Node 20.x)
-    - actions/cache (npm ~/.npm)
-    - npm ci
-    - npm run lint          # ESLint
-    - npm run type-check    # vue-tsc
-    - npm run test          # Vitest（ヘッドレス）
-    - npm run build         # Vite プロダクションビルド
-```
-
-**目的**: フロントエンドの品質ゲート。型エラー・テスト失敗・ビルド失敗をすべて PR 段階で検出する。
+- **トリガー**: `frontend-app/**` の変更を含む PR / main push
+- **ジョブ**: Node 20 + npm キャッシュ → `npm ci` → `lint` → `type-check` → `test --coverage` → `build`
+- **有効化タイミング**: Phase 5 で `frontend-app/package.json` が追加されてから
 
 ---
 
-### 4. `security-scan.yml` — 依存ライブラリの脆弱性スキャン
+### `security-scan.yml` — 脆弱性スキャン
 
-```
-トリガー: 毎週月曜 09:00 JST（cron: '0 0 * * 1'）
-         + PR（pom.xml / package.json / package-lock.json の変更時）
-
-ジョブ:
-  maven-dependency-check:
-    - OWASP Dependency Check（Maven プラグイン）
-    - severity HIGH 以上で失敗
-    - HTML レポートを Artifact 保存
-
-  npm-audit:
-    - npm audit --audit-level=high（frontend-app）
-    - 脆弱性あれば PR コメントで報告
-```
-
-**目的**: 使用ライブラリの既知 CVE を定期的に検出する。デモプロジェクトのため CD での強制ブロックは行わず、まず可視化に留める。
+- **トリガー**: 毎週月曜 09:00 JST + `pom.xml` / `package*.json` 変更の PR
+- **ジョブ**:
+  - OWASP Dependency Check（Maven / CVSS 9 以上で警告）
+  - npm audit（HIGH 以上で警告）
+- **方針**: デモプロジェクトのため `|| true` でビルドはブロックせず、レポートを Artifact に保存して可視化
 
 ---
 
-### 5. `integration-test.yml` — E2E 統合テスト（Week 9 完了後に追加）
+## 自動レビュー（reviewdog）の仕組み
 
 ```
-トリガー: push to main
-
-ジョブ:
-  e2e:
-    - Spring Boot API をバックグラウンド起動（mvn spring-boot:run &）
-    - Vue.js フロントエンドをビルド + serve
-    - Playwright でシナリオ実行:
-        1. ログイン
-        2. 書籍一覧表示
-        3. 書籍新規登録
-        4. 書籍編集
-        5. 書籍削除
-    - スクリーンショットを Artifact 保存
+PR push
+  │
+  ├─ reviewdog-eslint
+  │    npm run lint（ESLint）を実行
+  │    → 指摘箇所の PR diff 行に直接コメント投稿
+  │    例: "no-console: Unexpected console statement"
+  │
+  └─ reviewdog-checkstyle
+       mvn checkstyle:checkstyle を実行
+       → target/checkstyle-result.xml を reviewdog でパース
+       → 指摘箇所の PR diff 行に直接コメント投稿
+       例: "LineLength: Line is longer than 120 characters"
 ```
 
-**目的**: バックエンドとフロントエンドの結合を main マージ後に自動検証する。
+人間のレビュアーは reviewdog コメントを確認し、修正が必要かどうか判断する。
+CI 失敗にはしない（`fail_on_error: false`）ため、ゲートではなくアドバイスとして機能する。
 
 ---
 
-## paths-filter による条件分岐パターン
+## Phase 別 CI 有効化タイムライン
 
-各ワークフローで `dorny/paths-filter` を使い、変更がないモジュールのジョブをスキップします。
-
-```yaml
-jobs:
-  changes:
-    runs-on: ubuntu-latest
-    outputs:
-      legacy:   ${{ steps.filter.outputs.legacy }}
-      backend:  ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            legacy:
-              - 'legacy-app/**'
-            backend:
-              - 'migration-app/**'
-            frontend:
-              - 'frontend-app/**'
-
-  build-legacy:
-    needs: changes
-    if: needs.changes.outputs.legacy == 'true'
-    # ...
-```
-
----
-
-## ブランチ保護ルール（GitHub 上の手動設定）
-
-Week 10 の作業完了後、GitHub リポジトリの Settings → Branches から以下を設定する。
-
-| ルール | 設定値 |
+| Phase | 有効になる CI |
 |---|---|
-| 対象ブランチ | `main` |
-| Require a pull request before merging | ON |
-| Require approvals | 1 名以上 |
-| Require status checks to pass before merging | ON |
-| Required status checks | `build-and-test (legacy)`, `build-and-test (backend)`, `lint-typecheck-test-build (frontend)` |
-| Do not allow bypassing the above settings | ON |
-
-> **注意**: CLAUDE.md の基本ルール「main への直接 commit・push は禁止」と整合させるため、  
-> ブランチ保護ルールでも強制する。
+| CI/CD 基盤整備 | `pr-autocheck.yml`（全 PR で `Linked Issue Check` が動く） |
+| Phase 1 完了後 | `ci-legacy.yml`（Build & Test）が動く |
+| Phase 4 完了後 | `ci-backend.yml`（Build + Test + JaCoCo）と reviewdog Checkstyle が動く |
+| Phase 5 完了後 | `ci-frontend.yml`（Lint + Test + Build）と reviewdog ESLint が動く |
 
 ---
 
-## CI バッジ（README に追加）
+## CI/CD 基盤整備フェーズのチェックリスト
 
-```markdown
-![Legacy App CI](https://github.com/<owner>/<repo>/actions/workflows/legacy-app-ci.yml/badge.svg)
-![Migration API CI](https://github.com/<owner>/<repo>/actions/workflows/migration-api-ci.yml/badge.svg)
-![Frontend CI](https://github.com/<owner>/<repo>/actions/workflows/frontend-ci.yml/badge.svg)
-```
+Claude が Issue を起票し、以下を順に実施する。
 
----
-
-## Week 10 実装チェックリスト
-
-- [ ] `.github/workflows/legacy-app-ci.yml` 作成
-- [ ] `.github/workflows/migration-api-ci.yml` 作成（JaCoCo カバレッジ付き）
-- [ ] `.github/workflows/frontend-ci.yml` 作成
-- [ ] `.github/workflows/security-scan.yml` 作成
-- [ ] `.github/workflows/integration-test.yml` の雛形作成（E2E は Week 9 完了後に有効化）
-- [ ] `README.md` に CI バッジを追加
-- [ ] ブランチ保護ルール設定手順を `README.md` に記載
-- [ ] 各ワークフローが PR 上で正常に動作することを確認
+- [ ] ラベル・Milestone・GitHub Projects を作成（`docs/github-setup.md` の手順）
+- [ ] `pr-autocheck.yml` を動作確認（テスト PR を作成し `Linked Issue Check` が失敗することを確認）
+- [ ] ブランチ保護ルールに `Linked Issue Check` を必須チェックとして追加
+- [ ] CI バッジを `README.md` に追加
