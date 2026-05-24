@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE struts PUBLIC
+        "-//Apache Software Foundation//DTD Struts Configuration 2.5//EN"
+        "http://struts.apache.org/dtds/struts-2.5.dtd">
+<struts>
+    <constant name="struts.devMode" value="false"/>
+    <constant name="struts.i18n.encoding" value="UTF-8"/>
+    <constant name="struts.action.extension" value="action,"/>
+
+    <package name="default" namespace="/" extends="struts-default">
+        <action name="" class="com.example.legacy.action.BookListAction">
+            <result>/WEB-INF/jsp/book/list.jsp</result>
+        </action>
+    </package>
+
+    <package name="book" namespace="/book" extends="struts-default">
+        <action name="list" class="com.example.legacy.action.BookListAction">
+            <result>/WEB-INF/jsp/book/list.jsp</result>
+        </action>
+
+        <action name="detail" class="com.example.legacy.action.BookDetailAction">
+            <result>/WEB-INF/jsp/book/detail.jsp</result>
+            <result name="error">/WEB-INF/jsp/common/error.jsp</result>
+        </action>
+
+        <action name="create" class="com.example.legacy.action.BookCreateAction">
+            <result name="input">/WEB-INF/jsp/book/form.jsp</result>
+            <result name="success" type="redirectAction">
+                <param name="actionName">list</param>
+                <param name="namespace">/book</param>
+            </result>
+        </action>
+
+        <action name="edit" class="com.example.legacy.action.BookEditAction">
+            <result name="input">/WEB-INF/jsp/book/form.jsp</result>
+            <result name="success" type="redirectAction">
+                <param name="actionName">list</param>
+                <param name="namespace">/book</param>
+            </result>
+            <result name="error">/WEB-INF/jsp/common/error.jsp</result>
+        </action>
+
+        <action name="delete" class="com.example.legacy.action.BookDeleteAction" method="execute">
+            <result name="success" type="redirectAction">
+                <param name="actionName">list</param>
+                <param name="namespace">/book</param>
+            </result>
+            <result name="error">/WEB-INF/jsp/common/error.jsp</result>
+        </action>
+    </package>
+
+    <package name="auth" namespace="/auth" extends="struts-default">
+        <action name="login" class="com.example.legacy.action.LoginAction">
+            <result name="input">/WEB-INF/jsp/auth/login.jsp</result>
+            <result name="success" type="redirectAction">
+                <param name="actionName">list</param>
+                <param name="namespace">/book</param>
+            </result>
+        </action>
+
+        <action name="logout" class="com.example.legacy.action.LogoutAction">
+            <result name="success" type="redirectAction">
+                <param name="actionName">login</param>
+                <param name="namespace">/auth</param>
+            </result>
+        </action>
+    </package>
+</struts>
