@@ -1,0 +1,17 @@
+CREATE TABLE IF NOT EXISTS books (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    title        VARCHAR(100) NOT NULL,
+    author       VARCHAR(50)  NOT NULL,
+    isbn         VARCHAR(13)  NOT NULL,
+    category     VARCHAR(20)  NOT NULL,
+    published_year INT,
+    deleted      BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    username     VARCHAR(50)  NOT NULL PRIMARY KEY,
+    password     VARCHAR(100) NOT NULL,
+    display_name VARCHAR(100) NOT NULL
+);
